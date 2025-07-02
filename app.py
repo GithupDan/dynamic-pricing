@@ -1,54 +1,45 @@
 
 import streamlit as st
-import pandas as pd
-import matplotlib.pyplot as plt
 from PIL import Image
+import pandas as pd
+import numpy as np
+import datetime
 
-st.set_page_config(page_title="Merchify – Dynamic Pricing", layout="wide", initial_sidebar_state="expanded")
-
-# Logo laden und anzeigen (Cloud-kompatibel)
-logo = Image.open("images/merchify_logo.png")
+# Logo anzeigen
+logo = Image.open("merchify_logo.png")
 st.image(logo, width=280)
-st.markdown("### _The smart way to optimize your markdowns._")
-st.markdown("---")
 
-uploaded_file = st.file_uploader("📤 CSV-Datei hochladen", type="csv")
+# Titel und Untertitel
+st.title("🧠 Merchify – Dynamic Pricing Intelligence")
+st.markdown("**Smartere Entscheidungen. Schnellere Reduzierungen. Mehr Deckungsbeitrag.**")
+
+# Datei-Upload
+uploaded_file = st.file_uploader("Lade deine POS-Daten hoch (CSV mit Kalenderwochen)", type=["csv"])
 
 if uploaded_file:
-    df = pd.read_csv(uploaded_file, parse_dates=["Datum"])
-    st.subheader("🔍 Datenvorschau")
+    df = pd.read_csv(uploaded_file)
+    st.subheader("📊 Eingeladene Daten")
     st.dataframe(df.head())
 
-    # Auswahloptionen
-    if "KW" in df.columns and "Jahr" in df.columns:
-        jahre = sorted(df["Jahr"].unique())
-        jahr = st.selectbox("📅 Jahr wählen", jahre, index=len(jahre)-1)
-        wochen = sorted(df[df["Jahr"] == jahr]["KW"].unique())
-        kw = st.selectbox("📆 Kalenderwoche wählen", wochen)
+    # Rechenlogik: Beispiel für Reichweite
+    if 'Lagerbestand' in df.columns and 'Absatz' in df.columns:
+        df['Reichweite (Wochen)'] = df['Lagerbestand'] / (df['Absatz'].replace(0, np.nan) + 1e-5)
+        st.subheader("📈 Berechnete Reichweiten")
+        st.dataframe(df[['Artikelnummer', 'Reichweite (Wochen)']])
 
-        df_kw = df[(df["Jahr"] == jahr) & (df["KW"] == kw)]
-        st.subheader(f"📊 Analyse für KW {kw}, {jahr}")
-        st.dataframe(df_kw[["SKU", "Preis", "Verkäufe", "RW_KW", "Lager"]].sort_values("RW_KW", ascending=False))
-
-        st.subheader("📉 Preis vs. Verkäufe")
-        fig, ax = plt.subplots()
-        ax.scatter(df_kw["Preis"], df_kw["Verkäufe"], alpha=0.6, color="#00b3b1")
-        ax.set_xlabel("Preis")
-        ax.set_ylabel("Verkäufe")
-        ax.set_title("Preis-Absatz-Übersicht")
-        st.pyplot(fig)
-
-        st.subheader("📦 Reichweitenbewertung (RW_KW)")
-        def logik(rw):
-            if rw <= 4:
-                return "✅ OK"
-            elif 4 < rw <= 8:
-                return "🔸 Beobachten"
+        # Beispielhafte Reduktionslogik
+        def berechne_reduktion(rw):
+            if rw > 12:
+                return "-50%"
             elif rw > 8:
-                return "🔻 Reduzieren"
-        df_kw["Reduktions-Empfehlung"] = df_kw["RW_KW"].apply(logik)
-        st.dataframe(df_kw[["SKU", "RW_KW", "Reduktions-Empfehlung"]])
+                return "-30%"
+            elif rw > 4:
+                return "-20%"
+            else:
+                return "Keine"
 
-        st.download_button("📥 Download Woche als CSV", df_kw.to_csv(index=False), file_name=f"Reduktionsanalyse_KW{kw}_{jahr}.csv")
-else:
-    st.info("Bitte lade eine CSV-Datei mit Spalten 'Datum', 'KW', 'Jahr', 'Preis', 'RW_KW' usw. hoch.")
+        df['Reduktionsvorschlag'] = df['Reichweite (Wochen)'].apply(berechne_reduktion)
+        st.subheader("🛒 Reduktionsvorschläge")
+        st.dataframe(df[['Artikelnummer', 'Reichweite (Wochen)', 'Reduktionsvorschlag']])
+    else:
+        st.warning("Bitte sicherstellen, dass die Spalten 'Lagerbestand' und 'Absatz' vorhanden sind.")
