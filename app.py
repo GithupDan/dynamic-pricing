@@ -2,11 +2,13 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
+from PIL import Image
 
 st.set_page_config(page_title="Merchify – Dynamic Pricing", layout="wide", initial_sidebar_state="expanded")
 
-# Logo
-st.image("images/merchify_logo.png", width=280)
+# Logo laden und anzeigen (Cloud-kompatibel)
+logo = Image.open("images/merchify_logo.png")
+st.image(logo, width=280)
 st.markdown("### _The smart way to optimize your markdowns._")
 st.markdown("---")
 
