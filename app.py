@@ -3,38 +3,50 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 
-st.set_page_config(page_title="Dynamic Pricing Web-App", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Merchify – Dynamic Pricing", layout="wide", initial_sidebar_state="expanded")
 
-st.title("🧠 Dynamic Pricing Web-App")
-st.markdown("Lade eine CSV-Datei hoch, um deine Verkaufsdaten zu analysieren und **optimale Preise** zu simulieren.")
+# Logo
+st.image("images/merchify_logo.png", width=280)
+st.markdown("### _The smart way to optimize your markdowns._")
+st.markdown("---")
 
-uploaded_file = st.file_uploader("CSV-Datei hochladen", type="csv")
+uploaded_file = st.file_uploader("📤 CSV-Datei hochladen", type="csv")
 
 if uploaded_file:
     df = pd.read_csv(uploaded_file, parse_dates=["Datum"])
-    st.subheader("📊 Datenvorschau")
+    st.subheader("🔍 Datenvorschau")
     st.dataframe(df.head())
 
-    if "Preis" in df.columns and "Verkäufe" in df.columns:
-        st.subheader("📉 Preis-Absatz-Kurve")
+    # Auswahloptionen
+    if "KW" in df.columns and "Jahr" in df.columns:
+        jahre = sorted(df["Jahr"].unique())
+        jahr = st.selectbox("📅 Jahr wählen", jahre, index=len(jahre)-1)
+        wochen = sorted(df[df["Jahr"] == jahr]["KW"].unique())
+        kw = st.selectbox("📆 Kalenderwoche wählen", wochen)
+
+        df_kw = df[(df["Jahr"] == jahr) & (df["KW"] == kw)]
+        st.subheader(f"📊 Analyse für KW {kw}, {jahr}")
+        st.dataframe(df_kw[["SKU", "Preis", "Verkäufe", "RW_KW", "Lager"]].sort_values("RW_KW", ascending=False))
+
+        st.subheader("📉 Preis vs. Verkäufe")
         fig, ax = plt.subplots()
-        ax.plot(df["Preis"], df["Verkäufe"], "o-", label="Prognostizierter Absatz")
+        ax.scatter(df_kw["Preis"], df_kw["Verkäufe"], alpha=0.6, color="#00b3b1")
         ax.set_xlabel("Preis")
         ax.set_ylabel("Verkäufe")
-        ax.set_title("Preis-Absatz-Kurve")
-        ax.legend()
+        ax.set_title("Preis-Absatz-Übersicht")
         st.pyplot(fig)
 
-    if "RW_Tage" in df.columns:
-        st.subheader("📦 Reichweitenbasierte Reduktionslogik")
+        st.subheader("📦 Reichweitenbewertung (RW_KW)")
         def logik(rw):
-            if rw <= 28:
-                return "OK"
-            elif 28 < rw <= 56:
+            if rw <= 4:
+                return "✅ OK"
+            elif 4 < rw <= 8:
                 return "🔸 Beobachten"
-            elif rw > 56:
+            elif rw > 8:
                 return "🔻 Reduzieren"
-        df["Reduktions-Empfehlung"] = df["RW_Tage"].apply(logik)
-        st.dataframe(df[["Datum", "SKU", "Preis", "RW_Tage", "Reduktions-Empfehlung"]].sort_values("RW_Tage", ascending=False))
+        df_kw["Reduktions-Empfehlung"] = df_kw["RW_KW"].apply(logik)
+        st.dataframe(df_kw[["SKU", "RW_KW", "Reduktions-Empfehlung"]])
 
-        st.download_button("📥 Tabelle herunterladen", df.to_csv(index=False), file_name="Analyse_Reduktionslogik.csv")
+        st.download_button("📥 Download Woche als CSV", df_kw.to_csv(index=False), file_name=f"Reduktionsanalyse_KW{kw}_{jahr}.csv")
+else:
+    st.info("Bitte lade eine CSV-Datei mit Spalten 'Datum', 'KW', 'Jahr', 'Preis', 'RW_KW' usw. hoch.")
