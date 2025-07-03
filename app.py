@@ -7,24 +7,13 @@ from PIL import Image
 
 st.set_page_config(page_title="Merchify – Dynamic Pricing", layout="wide")
 
-# Logo und Farben
+# Custom Styling
 st.markdown("""<style>
-    .block-container {
-        padding-top: 2rem;
-    }
-    .stApp {
-        background-color: #f9f9f9;
-        color: #111;
-    }
-    .css-1d391kg {
-        background-color: white;
-    }
-    .st-emotion-cache-1avcm0n {
-        background-color: white;
-    }
+    .block-container { padding-top: 2rem; }
+    .stApp { background-color: #f8f9fa; color: #111; }
 </style>""", unsafe_allow_html=True)
 
-# Logo anzeigen
+# Logo
 col1, col2 = st.columns([0.1, 0.9])
 with col1:
     try:
@@ -39,73 +28,76 @@ with col2:
 # Tabs
 tabs = st.tabs(["🎯 Zielreichweiten", "📦 Artikelliste & Regeln", "📊 Dashboard"])
 
-# 1. Zielreichweiten
+# Initialisierung
+ziel_rw_dict = {}
+
+# Tab 1: Zielreichweiten
 with tabs[0]:
-    st.subheader("📅 Zielreichweiten pro Warengruppe + Monat (Beispiel FS Saison)")
-    ziel_df = pd.DataFrame({
-        "Monat": ["Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep"],
-        "KW-T-Shirts/Polos": ["X", "X", 24, 20, 16, 12, 8, 4],
-        "Hemden lang": ["X", "X", 12, 10, 8, 6, 4, 4],
-        "Jeans/Hosen": ["X", "X", 12, 10, 8, 6, 4, 4]
-    })
+    st.subheader("🎯 Zielreichweiten pro Warengruppe + Monat")
+    warengruppen = ["T-Shirts", "Hemden lang", "Jeans/Hosen"]
+    monate = ["Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep"]
+
+    data = {}
+    for wg in warengruppen:
+        data[wg] = []
+        for monat in monate:
+            key = f"{wg}_{monat}"
+            val = st.number_input(f"{wg} – {monat}", min_value=0, max_value=30, value=8, step=1, key=key)
+            data[wg].append(val)
+            ziel_rw_dict[key] = val
+
+    ziel_df = pd.DataFrame(data, index=monate)
     st.dataframe(ziel_df)
 
-# 2. Artikelliste + Regeln
+# Tab 2: Artikelliste & Regeln
 with tabs[1]:
-    st.subheader("📥 Lade deine POS-Daten hoch (CSV mit Kalenderwochen)")
-    uploaded_file = st.file_uploader("Drag and drop file here", type=["csv"])
+    st.subheader("📥 Lade deine POS-Daten hoch")
+    uploaded_file = st.file_uploader("CSV-Datei mit Verkaufsdaten", type=["csv"])
 
     if uploaded_file:
-        df = pd.read_csv(uploaded_file, encoding='utf-8')
-        st.dataframe(df.head())
+        df = pd.read_csv(uploaded_file, encoding="utf-8")
+        if "RW" in df.columns:
+            df.rename(columns={"RW": "Reichweite (Wochen)"}, inplace=True)
 
-        st.markdown("### 🧮 Reduktionsstufen laut Notiz:")
-
-        st.markdown("""
-        - RW > Ziel + 10 → **-30%**
-        - RW > Ziel + 4–8 → **-20%**
-        - RW > Ziel + 1–4 → **-10%**
-        - RW ≤ Ziel → **0%**
-        """)
-
-        st.markdown("### 🛠️ Optional: Passe Reduktionsstufen an")
+        # Reduktionslogik Eingabe
+        st.markdown("### 🛠️ Reduktionsstufen anpassen")
         col1, col2, col3, col4 = st.columns(4)
-        step_30 = col1.number_input("RW > Ziel + 10", value=-30)
-        step_20 = col2.number_input("RW > Ziel + 4–8", value=-20)
-        step_10 = col3.number_input("RW > Ziel + 1–4", value=-10)
+        step_30 = col1.number_input("RW > Ziel +10", value=-30)
+        step_20 = col2.number_input("RW > Ziel +4–8", value=-20)
+        step_10 = col3.number_input("RW > Ziel +1–4", value=-10)
         step_0 = col4.number_input("RW ≤ Ziel", value=0)
 
-        st.markdown("### 💡 Beispiel-Reduktionslogik (vereinfacht)")
+        ziel_standard = 8
+
         def vorschlag(row):
-            rw = row['Reichweite (Wochen)']
-            ziel = 8
-            if rw > ziel + 10:
+            rw = row.get("Reichweite (Wochen)", 0)
+            if rw > ziel_standard + 10:
                 return f"{step_30}%"
-            elif rw > ziel + 4:
+            elif rw > ziel_standard + 4:
                 return f"{step_20}%"
-            elif rw > ziel:
+            elif rw > ziel_standard:
                 return f"{step_10}%"
             else:
                 return f"{step_0}%"
 
-        if 'Reichweite (Wochen)' in df.columns:
-            df["Reduktionsvorschlag"] = df.apply(vorschlag, axis=1)
-            st.dataframe(df[['Artikelnummer', 'Reichweite (Wochen)', 'Reduktionsvorschlag']])
-        else:
-            st.warning("Spalte 'Reichweite (Wochen)' fehlt in der Datei.")
+        df["Reduktionsvorschlag"] = df.apply(vorschlag, axis=1)
 
-# 3. Dashboard
+        st.markdown("### 📦 Artikelliste mit Vorschlägen")
+        st.dataframe(df, use_container_width=True)
+
+# Tab 3: Dashboard
 with tabs[2]:
     st.subheader("📊 Dashboard")
-    if uploaded_file and 'Reduktionsvorschlag' in df.columns:
-        col1, col2, col3 = st.columns(3)
-        col1.metric("🛍️ Artikel", len(df))
-        col2.metric("📦 Gesamtbestand", df['Lagerbestand'].sum())
-        col3.metric("💰 Ø Deckungsbeitrag", round((df['VK_UVP'] - df['EK']).mean(), 2))
+    if uploaded_file:
+        if "Reichweite (Wochen)" not in df.columns:
+            st.error("Spalte 'Reichweite (Wochen)' fehlt.")
+        else:
+            col1, col2, col3 = st.columns(3)
+            col1.metric("🛍️ Artikel", df['Artikelnummer'].nunique())
+            col2.metric("📦 Lagerbestand", int(df["Lagerbestand"].sum()))
+            col3.metric("💰 Ø DB", round((df["VK_UVP"] - df["EK"]).mean(), 2))
 
-        chart_data = df['Reduktionsvorschlag'].value_counts().reset_index()
-        chart_data.columns = ['Vorschlag', 'Anzahl']
-        fig = px.bar(chart_data, x='Vorschlag', y='Anzahl', title="Häufigkeit der Reduktionsvorschläge", text_auto=True)
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("Bitte lade zuerst eine Datei unter 'Artikelliste & Regeln' hoch.")
+            chart_data = df["Reduktionsvorschlag"].value_counts().reset_index()
+            chart_data.columns = ["Vorschlag", "Anzahl"]
+            fig = px.bar(chart_data, x="Vorschlag", y="Anzahl", title="Reduktionsvorschläge", text_auto=True)
+            st.plotly_chart(fig, use_container_width=True)
