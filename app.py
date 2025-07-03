@@ -2,85 +2,122 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+from PIL import Image
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+import xgboost as xgb
 
-st.set_page_config(page_title="Merchify – Dynamic Pricing Intelligence", layout="wide")
+st.set_page_config(page_title="Merchify - Dynamic Pricing", layout="wide")
 
-# --- Styling ---
-st.markdown("""
-    <style>
-        body, .stApp {
-            color: white;
-            background-color: #111;
-        }
-        .css-18e3th9 {
-            background-color: #111;
-        }
-        .stTextInput > div > input {
-            background-color: #222;
-            color: white;
-        }
-        .stSelectbox > div > div {
-            background-color: #222;
-            color: white;
-        }
-        .stNumberInput > div > input {
-            background-color: #222;
-            color: white;
-        }
-    </style>
-""", unsafe_allow_html=True)
+# Logo
+col1, col2 = st.columns([1, 6])
+with col1:
+    st.image("merchify_logo.png", width=120)
+with col2:
+    st.markdown("### **Merchify – Dynamic Pricing**")
+    st.caption("📈 Mit KI-gestützter Reduktions- & Preislogik")
 
-# --- Title Section ---
-st.image("merchify_logo.png", width=450)
-st.title("Merchify – Dynamic Pricing Intelligence")
-st.markdown("**Smartere Entscheidungen. Schnellere Reduzierungen. Mehr Deckungsbeitrag.**")
-
-# --- Tabs ---
-tab1, tab2, tab3 = st.tabs([
-    "🎯 Zielreichweiten", "📦 Artikelliste & Regeln", "📊 Dashboard"
-])
-
-# --- Load Data ---
-uploaded_file = st.sidebar.file_uploader("📁 CSV-Datei hochladen", type=["csv"])
+# Upload
+uploaded_file = st.file_uploader("📤 Lade deine Verkaufsdaten (CSV) hoch", type="csv")
 if uploaded_file:
     df = pd.read_csv(uploaded_file)
-    df.columns = df.columns.str.strip()  # remove whitespace
+
+    # KW → Monat Mapping
+    kw_to_month = {
+        **dict.fromkeys(range(1, 5), "Januar"),
+        **dict.fromkeys(range(5, 9), "Februar"),
+        **dict.fromkeys(range(9, 14), "März"),
+        **dict.fromkeys(range(14, 18), "April"),
+        **dict.fromkeys(range(18, 23), "Mai"),
+        **dict.fromkeys(range(23, 27), "Juni"),
+        **dict.fromkeys(range(27, 32), "Juli"),
+        **dict.fromkeys(range(32, 36), "August"),
+        **dict.fromkeys(range(36, 40), "September"),
+        **dict.fromkeys(range(40, 45), "Oktober"),
+        **dict.fromkeys(range(45, 49), "November"),
+        **dict.fromkeys(range(49, 54), "Dezember"),
+    }
+    df["Monat"] = df["Kalenderwoche"].map(kw_to_month)
+
+    # Saison-Tagging
+    saison_mapping = {
+        "Winter": ["Dezember", "Januar", "Februar"],
+        "Frühling": ["März", "April", "Mai"],
+        "Sommer": ["Juni", "Juli", "August"],
+        "Herbst": ["September", "Oktober", "November"],
+    }
+    def get_saison(monat):
+        for saison, monate in saison_mapping.items():
+            if monat in monate:
+                return saison
+        return "Unbekannt"
+    df["Saison"] = df["Monat"].apply(get_saison)
+
+    # Zielreichweiten-Input pro Saison
+    st.sidebar.header("🎯 Zielreichweite (in Wochen) je Saison")
+    zielwerte = {
+        saison: st.sidebar.slider(f"{saison}", 2, 20, 6)
+        for saison in ["Winter", "Frühling", "Sommer", "Herbst"]
+    }
+    df["Zielreichweite (Wochen)"] = df["Saison"].map(zielwerte)
+
+    # Reichweite berechnen (falls nicht vorhanden)
     if "RW" not in df.columns:
-        if "Lagerbestand" in df.columns and "Verkäufe" in df.columns:
-            df["RW"] = (df["Lagerbestand"] / (df["Verkäufe"] + 0.01)).round(1)
+        df["RW"] = (df["Lagerbestand"] / (df["Verkäufe"] + 0.1)).round(1)
+
+    # Dummy-Encoding
+    df_ml = pd.get_dummies(df, columns=["Monat", "Saison"], drop_first=True)
+
+    # Feature Auswahl
+    features = [
+        'Preis', 'EK', 'VK_UVP', 'Lagerbestand', 'Deckungsbeitrag', 'RW', 'Kalenderwoche'
+    ] + [col for col in df_ml.columns if col.startswith("Monat_") or col.startswith("Saison_")]
+
+    # Ziel: Absatz
+    X = df_ml[features]
+    y_sales = df["Verkäufe"]
+    model_sales = xgb.XGBRegressor(n_estimators=100, max_depth=3)
+    model_sales.fit(X, y_sales)
+    df["Absatz_Prognose"] = model_sales.predict(X).round()
+
+    # Ziel: Preis
+    y_price = df["Preis"]
+    model_price = xgb.XGBRegressor(n_estimators=100, max_depth=3)
+    model_price.fit(X, y_price)
+    df["Preis_Empfehlung"] = model_price.predict(X).round(2)
+
+    # Ziel: Reduktionsbedarf
+    df["Reduktionsbedarf"] = df["RW"] > df["Zielreichweite (Wochen)"]
+    y_red = df["Reduktionsbedarf"]
+    model_red = RandomForestClassifier(n_estimators=100, max_depth=5)
+    model_red.fit(X, y_red)
+    df["Reduktionsbedarf_Prognose"] = model_red.predict(X)
+
+    # Tabs
+    tab1, tab2, tab3 = st.tabs(["📋 Artikelliste", "📊 Dashboard", "⚙️ Reduktionslogik"])
 
     with tab1:
-        st.subheader("📊 Zielreichweiten pro Warengruppe + Monat")
-        st.markdown("Hier kannst du die Zielreichweiten je Warengruppe und Monat anpassen:")
-        ziel_df = pd.DataFrame(index=["Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep"],
-                               columns=["KW-T-Shirts/Polos", "Hemden lang", "Jeans/Hosen"])
-        for col in ziel_df.columns:
-            for row in ziel_df.index:
-                ziel_df.loc[row, col] = st.number_input(f"{col} – {row}", min_value=0, value=8)
-        st.dataframe(ziel_df)
+        st.subheader("📋 Artikelliste mit Prognosen")
+        st.dataframe(df[[
+            "Artikelnummer", "Warengruppe", "Kalenderwoche", "Saison", "RW",
+            "Zielreichweite (Wochen)", "Reduktionsbedarf_Prognose", "Preis", "Preis_Empfehlung",
+            "Verkäufe", "Absatz_Prognose"
+        ]], use_container_width=True)
 
     with tab2:
-        st.subheader("🛠️ Reduktionsstufen anpassen")
-        col1, col2, col3, col4 = st.columns(4)
-        red1 = col1.number_input("> Ziel +10", value=-30)
-        red2 = col2.number_input("RW > Ziel +4–8", value=-20)
-        red3 = col3.number_input("RW > Ziel +1–4", value=-10)
-        red4 = col4.number_input("RW ≤ Ziel", value=0)
+        st.subheader("📊 Dashboard")
+        kpi1, kpi2, kpi3 = st.columns(3)
+        kpi1.metric("Ø Prognose Absatz", f"{df['Absatz_Prognose'].mean():.1f}")
+        kpi2.metric("Ø Preisempfehlung", f"{df['Preis_Empfehlung'].mean():.2f} €")
+        kpi3.metric("Reduktionsquote", f"{df['Reduktionsbedarf_Prognose'].mean()*100:.1f} %")
 
-        st.subheader("📦 Artikelliste mit Vorschlägen")
-        if "RW" in df.columns:
-            df["Reduktion (%)"] = df["RW"].apply(lambda x: red1 if x > 10 else red2 if x > 4 else red3 if x > 1 else red4)
-        st.dataframe(df)
+        fig = px.box(df, x="Saison", y="RW", color="Reduktionsbedarf_Prognose",
+                     title="Reichweite nach Saison")
+        st.plotly_chart(fig, use_container_width=True)
 
     with tab3:
-        st.subheader("📊 Dashboard")
-        try:
-            col1, col2 = st.columns(2)
-            col1.metric("🔐 Artikel", df["SKU"].nunique())
-            col2.metric("⏳ Ø RW", round(df["RW"].mean(), 1))
-            fig = px.histogram(df, x="RW", nbins=20, title="Verteilung der Reichweiten")
-            st.plotly_chart(fig, use_container_width=True)
-        except Exception as e:
-            st.error(f"Fehler im Dashboard: {e}")
-else:
-    st.warning("Bitte lade eine CSV-Datei hoch.")
+        st.subheader("⚙️ Reduktionslogik")
+        st.write("Ein Artikel wird zur Reduktion vorgeschlagen, wenn:")
+        st.write("- Die berechnete Reichweite **größer** ist als die definierte Zielreichweite für die Saison.")
+        st.write("- Die Prognose des Modells zusätzlich diesen Bedarf bestätigt.")
+
