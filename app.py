@@ -1,103 +1,79 @@
 
 import streamlit as st
 import pandas as pd
+import calendar
 import plotly.express as px
-from datetime import datetime
-from PIL import Image
 
-st.set_page_config(page_title="Merchify – Dynamic Pricing", layout="wide")
+st.set_page_config(layout="wide")
 
-# Custom Styling
-st.markdown("""<style>
-    .block-container { padding-top: 2rem; }
-    .stApp { background-color: #f8f9fa; color: #111; }
-</style>""", unsafe_allow_html=True)
+st.markdown("""
+    <style>
+        .main {
+            background-color: #f8f9fa;
+            color: #000;
+        }
+        section[tabindex] h1, section[tabindex] h2, section[tabindex] h3 {
+            color: #000;
+        }
+        .css-1d391kg {color: #000 !important;}
+    </style>
+""", unsafe_allow_html=True)
 
-# Logo
-col1, col2 = st.columns([0.1, 0.9])
-with col1:
-    try:
-        logo = Image.open("merchify_logo.png")
-        st.image(logo, width=70)
-    except:
-        st.write("🧠")
-with col2:
-    st.markdown("## **Merchify – Dynamic Pricing Intelligence**")
-    st.caption("**Smartere Entscheidungen. Schnellere Reduzierungen. Mehr Deckungsbeitrag.**")
+st.title("🧠 Merchify – Dynamic Pricing Intelligence")
+st.caption("**Smartere Entscheidungen. Schnellere Reduzierungen. Mehr Deckungsbeitrag.**")
 
-# Tabs
-tabs = st.tabs(["🎯 Zielreichweiten", "📦 Artikelliste & Regeln", "📊 Dashboard"])
+tab1, tab2, tab3 = st.tabs(["🎯 Zielreichweiten", "📦 Artikelliste & Regeln", "📊 Dashboard"])
 
-# Initialisierung
-ziel_rw_dict = {}
+with tab1:
+    st.header("📅 Zielreichweiten pro Warengruppe + Monat")
+    months = list(calendar.month_name)[2:10]
+    warengruppen = ["T-Shirts/Polos", "Hemden lang", "Jeans/Hosen"]
+    zielwerte = {}
 
-# Tab 1: Zielreichweiten
-with tabs[0]:
-    st.subheader("🎯 Zielreichweiten pro Warengruppe + Monat")
-    warengruppen = ["T-Shirts", "Hemden lang", "Jeans/Hosen"]
-    monate = ["Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep"]
+    cols = st.columns(len(warengruppen))
+    for i, wg in enumerate(warengruppen):
+        with cols[i]:
+            st.markdown(f"**{wg}**")
+            for m in months:
+                key = f"{wg}_{m}"
+                zielwerte[key] = st.number_input(f"{m}", min_value=0, max_value=52, value=8, key=key)
 
-    data = {}
-    for wg in warengruppen:
-        data[wg] = []
-        for monat in monate:
-            key = f"{wg}_{monat}"
-            val = st.number_input(f"{wg} – {monat}", min_value=0, max_value=30, value=8, step=1, key=key)
-            data[wg].append(val)
-            ziel_rw_dict[key] = val
+with tab2:
+    st.header("🛠️ Reduktionsstufen anpassen")
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        r30 = st.number_input("> Ziel +10", value=-30)
+    with col2:
+        r20 = st.number_input("RW > Ziel +4–8", value=-20)
+    with col3:
+        r10 = st.number_input("RW > Ziel +1–4", value=-10)
+    with col4:
+        r00 = st.number_input("RW ≤ Ziel", value=0)
 
-    ziel_df = pd.DataFrame(data, index=monate)
-    st.dataframe(ziel_df)
-
-# Tab 2: Artikelliste & Regeln
-with tabs[1]:
-    st.subheader("📥 Lade deine POS-Daten hoch")
-    uploaded_file = st.file_uploader("CSV-Datei mit Verkaufsdaten", type=["csv"])
-
+    uploaded_file = st.file_uploader("📤 Lade deine Datei hoch", type=["csv"])
     if uploaded_file:
-        df = pd.read_csv(uploaded_file, encoding="utf-8")
-        if "RW" in df.columns:
-            df.rename(columns={"RW": "Reichweite (Wochen)"}, inplace=True)
-
-        # Reduktionslogik Eingabe
-        st.markdown("### 🛠️ Reduktionsstufen anpassen")
-        col1, col2, col3, col4 = st.columns(4)
-        step_30 = col1.number_input("RW > Ziel +10", value=-30)
-        step_20 = col2.number_input("RW > Ziel +4–8", value=-20)
-        step_10 = col3.number_input("RW > Ziel +1–4", value=-10)
-        step_0 = col4.number_input("RW ≤ Ziel", value=0)
-
-        ziel_standard = 8
-
-        def vorschlag(row):
-            rw = row.get("Reichweite (Wochen)", 0)
-            if rw > ziel_standard + 10:
-                return f"{step_30}%"
-            elif rw > ziel_standard + 4:
-                return f"{step_20}%"
-            elif rw > ziel_standard:
-                return f"{step_10}%"
-            else:
-                return f"{step_0}%"
-
-        df["Reduktionsvorschlag"] = df.apply(vorschlag, axis=1)
-
-        st.markdown("### 📦 Artikelliste mit Vorschlägen")
+        df = pd.read_csv(uploaded_file)
+        if "Reichweite (Wochen)" not in df.columns:
+            df["Reichweite (Wochen)"] = (df["Lagerbestand"] / (df["Absatz"] + 0.01)).round(1)
+        df["Reduktionsvorschlag"] = df["Reichweite (Wochen)"] - 0
+        df["Reduktionsvorschlag"] = df["Reichweite (Wochen)"].apply(lambda x: r30 if x > 10 else (r20 if x > 8 else (r10 if x > 4 else r00)))
+        st.subheader("📦 Artikelliste mit Vorschlägen")
         st.dataframe(df, use_container_width=True)
 
-# Tab 3: Dashboard
-with tabs[2]:
-    st.subheader("📊 Dashboard")
-    if uploaded_file:
-        if "Reichweite (Wochen)" not in df.columns:
-            st.error("Spalte 'Reichweite (Wochen)' fehlt.")
-        else:
+with tab3:
+    st.header("📊 Dashboard")
+    if uploaded_file is not None:
+        try:
             col1, col2, col3 = st.columns(3)
-            col1.metric("🛍️ Artikel", df['Artikelnummer'].nunique())
-            col2.metric("📦 Lagerbestand", int(df["Lagerbestand"].sum()))
-            col3.metric("💰 Ø DB", round((df["VK_UVP"] - df["EK"]).mean(), 2))
+            col1.metric("🔐 Artikel", df["Artikelnummer"].nunique())
+            col2.metric("🛍️ Warengruppen", df["Warengruppe"].nunique())
+            col3.metric("📆 Kalenderwochen", df["KW"].nunique())
 
-            chart_data = df["Reduktionsvorschlag"].value_counts().reset_index()
-            chart_data.columns = ["Vorschlag", "Anzahl"]
-            fig = px.bar(chart_data, x="Vorschlag", y="Anzahl", title="Reduktionsvorschläge", text_auto=True)
+            st.subheader("📉 Reduktionsvorschläge Verteilung")
+            fig = px.bar(df["Reduktionsvorschlag"].value_counts().reset_index(),
+                         x="index", y="Reduktionsvorschlag",
+                         labels={"index": "Reduktion", "Reduktionsvorschlag": "Anzahl"},
+                         title="Verteilung der Reduktionsvorschläge")
             st.plotly_chart(fig, use_container_width=True)
+        except Exception as e:
+            st.error(f"Fehler im Dashboard: {e}")
