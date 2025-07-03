@@ -22,10 +22,10 @@ if uploaded_file:
     st.dataframe(df.head())
 
     # Rechenlogik: Beispiel für Reichweite
-    if 'Lagerbestand' in df.columns and 'Absatz' in df.columns:
-        df['Reichweite (Wochen)'] = df['Lagerbestand'] / (df['Absatz'].replace(0, np.nan) + 1e-5)
+    if 'Lagerbestand' in df.columns and 'Verkäufe' in df.columns:
+        df['Reichweite (Wochen)'] = df['Lagerbestand'] / (df['Verkäufe'].replace(0, np.nan) + 1e-5)
         st.subheader("📈 Berechnete Reichweiten")
-        st.dataframe(df[['Artikelnummer', 'Reichweite (Wochen)']])
+        st.dataframe(df[['SKU', 'Reichweite (Wochen)']])
 
         # Beispielhafte Reduktionslogik
         def berechne_reduktion(rw):
@@ -40,6 +40,6 @@ if uploaded_file:
 
         df['Reduktionsvorschlag'] = df['Reichweite (Wochen)'].apply(berechne_reduktion)
         st.subheader("🛒 Reduktionsvorschläge")
-        st.dataframe(df[['Artikelnummer', 'Reichweite (Wochen)', 'Reduktionsvorschlag']])
+        st.dataframe(df[['SKU', 'Reichweite (Wochen)', 'Reduktionsvorschlag']])
     else:
-        st.warning("Bitte sicherstellen, dass die Spalten 'Lagerbestand' und 'Absatz' vorhanden sind.")
+        st.warning("Bitte sicherstellen, dass die Spalten 'Lagerbestand' und 'Verkäufe' vorhanden sind.")
