@@ -9,7 +9,7 @@ import xgboost as xgb
 
 st.set_page_config(page_title="Merchify - Dynamic Pricing", layout="wide")
 
-# Logo
+# Logo & Header
 col1, col2 = st.columns([1, 6])
 with col1:
     st.image("merchify_logo.png", width=120)
@@ -53,15 +53,25 @@ if uploaded_file:
         return "Unbekannt"
     df["Saison"] = df["Monat"].apply(get_saison)
 
-    # Zielreichweiten-Input pro Saison
-    st.sidebar.header("🎯 Zielreichweite (in Wochen) je Saison")
-    zielwerte = {
-        saison: st.sidebar.slider(f"{saison}", 2, 20, 6)
-        for saison in ["Winter", "Frühling", "Sommer", "Herbst"]
-    }
-    df["Zielreichweite (Wochen)"] = df["Saison"].map(zielwerte)
+    # Zielreichweiten je Warengruppe & Saison
+    st.sidebar.header("🎯 Zielreichweite pro Warengruppe & Saison")
+    warengruppen = df["Warengruppe"].unique()
+    saisonen = ["Winter", "Frühling", "Sommer", "Herbst"]
+    zielwerte_matrix = {}
 
-    # Reichweite berechnen (falls nicht vorhanden)
+    for warengruppe in warengruppen:
+        for saison in saisonen:
+            key = f"{warengruppe}_{saison}"
+            default = 6 if saison in ["Winter", "Herbst"] else 4
+            zielwerte_matrix[key] = st.sidebar.slider(f"{warengruppe} ({saison})", 2, 20, default)
+
+    # Anwenden auf df
+    def zielwert_lookup(row):
+        return zielwerte_matrix.get(f"{row['Warengruppe']}_{row['Saison']}", 6)
+
+    df["Zielreichweite (Wochen)"] = df.apply(zielwert_lookup, axis=1)
+
+    # Reichweite berechnen
     if "RW" not in df.columns:
         df["RW"] = (df["Lagerbestand"] / (df["Verkäufe"] + 0.1)).round(1)
 
@@ -118,6 +128,5 @@ if uploaded_file:
     with tab3:
         st.subheader("⚙️ Reduktionslogik")
         st.write("Ein Artikel wird zur Reduktion vorgeschlagen, wenn:")
-        st.write("- Die berechnete Reichweite **größer** ist als die definierte Zielreichweite für die Saison.")
+        st.write("- Die berechnete Reichweite **größer** ist als die definierte Zielreichweite für Saison & Warengruppe.")
         st.write("- Die Prognose des Modells zusätzlich diesen Bedarf bestätigt.")
-
