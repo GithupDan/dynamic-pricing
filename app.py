@@ -1,67 +1,69 @@
 
 import streamlit as st
 import pandas as pd
+import numpy as np
 import plotly.express as px
+from pathlib import Path
 from PIL import Image
 
-# App-Konfiguration
-st.set_page_config(page_title="Merchify – Dynamic Pricing", layout="wide")
+# === Seitenkonfiguration ===
+st.set_page_config(
+    page_title="Merchify – Dynamic Pricing",
+    layout="wide",
+)
 
-# Logo und Titel
-logo_path = "merchify_logo.png"
+# === Logo anzeigen ===
+logo_path = "images/merchify_logo.png"
 if Path(logo_path).exists():
-    st.image(logo_path, width=200)
+    logo = Image.open(logo_path)
+    st.image(logo, width=300)
 
-st.markdown("<h1 style='color: white;'>Merchify – Dynamic Pricing Dashboard</h1>", unsafe_allow_html=True)
-st.markdown("---")
+# === Titel ===
+st.markdown("<h1 style='color:white;'>Merchify – Dynamic Pricing Dashboard</h1>", unsafe_allow_html=True)
 
-# Datei-Upload
-uploaded_file = st.file_uploader("📤 Lade deine CSV-Datei hoch:", type=["csv"])
+# === Datei-Upload ===
+uploaded_file = st.file_uploader("📂 Lade deine CSV-Datei hoch", type=["csv"])
+
 if uploaded_file:
     df = pd.read_csv(uploaded_file)
-    df.columns = df.columns.str.strip()
 
-    # Berechnung durchschnittlicher Absatz & Reichweite der letzten 4 Wochen
-    absatz_cols = ['Absatz 1', 'Absatz 2', 'Absatz 3', 'Absatz 4']
-    if all(col in df.columns for col in absatz_cols):
-        df["Ø Absatz 4W"] = df[absatz_cols].mean(axis=1)
-        df["Ø RW (Wochen)"] = (df["Lagerbestand"] / (df["Ø Absatz 4W"] + 0.01)).round(1)
-
-    # Tabs für Navigation
-    tab1, tab2, tab3, tab4 = st.tabs(["📋 Artikelliste", "📈 Dashboard", "📊 Forecast", "🎯 Zielreichweiten"])
+    # === Tabs ===
+    tab1, tab2, tab3, tab4 = st.tabs(["📋 Artikelliste", "🎯 Zielreichweiten", "📊 Dashboard", "📈 Forecast"])
 
     with tab1:
         st.subheader("📋 Artikelliste")
-        st.dataframe(df[['Artikelnr', 'Warengruppe', 'Preis', 'Lagerbestand', 'Absatz 1', 'Absatz 2', 'Absatz 3', 'Absatz 4', 'Ø Absatz 4W', 'Ø RW (Wochen)', 'Zielreichweite']], use_container_width=True)
+        st.dataframe(df)
 
     with tab2:
-        st.subheader("📈 Dashboard")
-        kpis = df.groupby('Warengruppe').agg({'Verkäufe': 'sum', 'Absatz_Prognose': 'sum'}).reset_index()
-        fig = px.bar(kpis, x='Warengruppe', y=['Verkäufe', 'Absatz_Prognose'], barmode='group', title="Verkäufe vs Prognose je Warengruppe")
-        st.plotly_chart(fig, use_container_width=True)
+        st.subheader("🎯 Zielreichweiten definieren")
+        saisons = df["Saison"].unique()
+        warengruppen = df["Warengruppe"].unique()
+        ziel_rw = {}
 
-    with tab3:
-        st.subheader("📊 Forecast Vorschau")
-        forecast = df.groupby(['Warengruppe', 'Saison']).agg({'Absatz_Prognose': 'sum'}).reset_index()
-        st.dataframe(forecast, use_container_width=True)
-
-    with tab4:
-        st.subheader("🎯 Zielreichweiten")
-        seasons = df['Saison'].unique()
-        warengruppen = df['Warengruppe'].unique()
-
-        ziel_rw_input = {}
-        for saison in seasons:
-            st.markdown(f"**{saison}**")
+        for saison in saisons:
+            st.markdown(f"**Saison: {saison}**")
             cols = st.columns(len(warengruppen))
             for i, wg in enumerate(warengruppen):
                 key = f"{saison}_{wg}"
-                ziel_rw_input[key] = cols[i].number_input(f"{wg}", min_value=1, max_value=30, value=8, key=key)
+                ziel_rw[key] = cols[i].number_input(f"{wg}", value=8, step=1, key=key)
 
-        if st.button("💾 Speichern & Anwenden"):
-            def get_zielrw(row):
-                return ziel_rw_input.get(f"{row['Saison']}_{row['Warengruppe']}", 8)
-            df['Zielreichweite'] = df.apply(get_zielrw, axis=1)
-            df["Reduktion (%)"] = df.apply(lambda row: 20 if row["Ø RW (Wochen)"] > row["Zielreichweite"] else 0, axis=1)
-            st.success("Zielreichweiten angewendet!")
+    with tab3:
+        st.subheader("📊 Dashboard")
+        col1, col2 = st.columns(2)
+        with col1:
+            fig1 = px.bar(df.groupby("Warengruppe")["Absatz"].sum().reset_index(),
+                          x="Warengruppe", y="Absatz", title="Absatz nach Warengruppe")
+            st.plotly_chart(fig1, use_container_width=True)
+        with col2:
+            fig2 = px.line(df.groupby("KW")["Absatz"].sum().reset_index(),
+                           x="KW", y="Absatz", title="Absatzverlauf über die Kalenderwochen")
+            st.plotly_chart(fig2, use_container_width=True)
 
+    with tab4:
+        st.subheader("📈 Absatz-Forecast")
+        if "Absatz_Prognose" in df.columns:
+            forecast_df = df.groupby(["Saison", "Warengruppe"])[
+                "Absatz_Prognose"].sum().reset_index().sort_values(by="Saison")
+            st.dataframe(forecast_df)
+        else:
+            st.warning("⚠️ Keine Spalte 'Absatz_Prognose' gefunden.")
